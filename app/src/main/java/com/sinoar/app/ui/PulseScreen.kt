@@ -1,6 +1,7 @@
 package com.sinoar.app.ui
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -8,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -45,7 +47,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.sinoar.app.actions.ActionExecutor
+import com.sinoar.app.actions.AuditLog
+import com.sinoar.app.actions.PlannedAction
+import com.sinoar.app.actions.Planner
 import com.sinoar.app.audio.VoiceRecorder
+import com.sinoar.app.nlu.IntentParser
 import com.sinoar.app.stt.ModelStore
 import com.sinoar.app.stt.VoskTranscriber
 import com.sinoar.app.stt.WavReader
@@ -71,6 +79,31 @@ fun PulseScreen(modifier: Modifier = Modifier) {
     var transcribing by remember { mutableStateOf(false) }
     var transcript by remember { mutableStateOf<String?>(null) }
     var transcriber by remember { mutableStateOf<VoskTranscriber?>(null) }
+
+    var planned by remember { mutableStateOf<PlannedAction?>(null) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+
+    val guardedPermissions = remember {
+        listOf(
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+        )
+    }
+    var missingPermissions by remember {
+        mutableStateOf(
+            guardedPermissions.filter {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
+        )
+    }
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        missingPermissions = guardedPermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+    }
 
     var ttsReady by remember { mutableStateOf(false) }
     var ttsArabic by remember { mutableStateOf(false) }
@@ -142,6 +175,18 @@ fun PulseScreen(modifier: Modifier = Modifier) {
         }
         transcript = text
         transcribing = false
+
+        if (text.isNotBlank()) {
+            val (action, problem) = withContext(Dispatchers.IO) {
+                Planner.plan(context, IntentParser.parse(text))
+            }
+            planned = action
+            actionMessage = problem
+        } else {
+            planned = null
+            actionMessage = null
+        }
+
         if (ttsReady && ttsArabic) {
             val spoken = text.ifBlank { "لم أسمع كلامًا واضحًا" }
             tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "sinoar")
@@ -163,6 +208,17 @@ fun PulseScreen(modifier: Modifier = Modifier) {
             mp.start()
         }.isSuccess
         if (ok) player = mp else mp.release()
+    }
+
+    val executeAction: (PlannedAction) -> Unit = { action ->
+        val result = when (action) {
+            is PlannedAction.Call -> ActionExecutor.call(context, action.contact.number)
+            is PlannedAction.Alarm -> ActionExecutor.alarm(context, action.hour, action.minute, action.label)
+            is PlannedAction.Play -> ActionExecutor.play(context, action.item)
+        }
+        AuditLog.append(context, action.title, action.detail)
+        actionMessage = result
+        planned = null
     }
 
     Column(
@@ -284,6 +340,36 @@ fun PulseScreen(modifier: Modifier = Modifier) {
 
         Spacer(Modifier.height(20.dp))
 
+        if (missingPermissions.isNotEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        text = "أذونات مطلوبة لتشغيل الأوامر",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "الاتصال، جهات الاتصال، والوصول إلى الملفات الصوتية.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "منح الأذونات",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            permissionsLauncher.launch(missingPermissions.toTypedArray())
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
         if (!modelReady) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -345,6 +431,56 @@ fun PulseScreen(modifier: Modifier = Modifier) {
                 }
             }
             Spacer(Modifier.height(16.dp))
+        }
+
+        val action = planned
+        if (action != null) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        text = "تأكيد الأمر",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "${action.title}: ${action.detail}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                        Text(
+                            text = "تنفيذ",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { executeAction(action) }
+                        )
+                        Text(
+                            text = "إلغاء",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.clickable { planned = null }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        val message = actionMessage
+        if (message != null) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(12.dp))
         }
 
         if (!ttsArabic && ttsReady) {
