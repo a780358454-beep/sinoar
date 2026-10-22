@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Models & private data (never commit)
+models/
+data/
+*.onnx
+*.gguf
+*.bin
+!gradle/wrapper/gradle-wrapper.jar
+
+# Env
+tools/setup.log
