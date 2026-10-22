@@ -21,7 +21,7 @@ class VoskTranscriber(private val modelDir: File) : Closeable {
         if (samples.isEmpty()) return ""
 
         val loaded = model ?: Model(modelDir.absolutePath).also { model = it }
-        val recognizer = Recognizer(loaded, SAMPLE_RATE)
+        val recognizer = Recognizer(loaded, SAMPLE_RATE.toFloat())
         return try {
             recognizer.acceptWaveForm(samples, samples.size)
             JSONObject(recognizer.finalResult).optString("text", "").trim()
