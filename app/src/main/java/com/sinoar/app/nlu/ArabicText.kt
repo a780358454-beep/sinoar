@@ -9,7 +9,7 @@ object ArabicText {
     fun normalize(input: String): String {
         var s = DIACRITICS.replace(input, "")
         s = s.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
-        s = s.replace('ى', 'ي').replace('ة', 'ه').replace('ـ', '')
+        s = s.replace('ى', 'ي').replace('ة', 'ه').replace("\u0640", "")
         s = s.replace('،', ' ').replace('؟', ' ').replace('!', ' ').replace('.', ' ')
 
         val sb = StringBuilder(s.length)

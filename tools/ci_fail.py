@@ -74,7 +74,7 @@ def report(name, text):
         line
         for line in lines
         if re.search(
-            r"^e: |error:|FAILURE:|What went wrong|Caused by|Unresolved reference|Could not (find|resolve)",
+            r"^e: |error:|FAILURE:|What went wrong|Caused by|Unresolved reference|Could not (find|resolve)|\.kt:\d+",
             line,
         )
     ]
