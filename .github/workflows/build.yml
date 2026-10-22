@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -47,3 +47,17 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # Direct download link (no GitHub login needed on the phone):
+      # https://github.com/<owner>/<repo>/releases/download/latest/app-debug.apk
+      - name: Publish direct download
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create latest --repo "$GITHUB_REPOSITORY" \
+              --title "Sinoar — latest build" \
+              --notes "Debug APK built from ${{ github.sha }}" \
+              --prerelease
+          gh release upload latest app/build/outputs/apk/debug/*.apk \
+            --repo "$GITHUB_REPOSITORY" --clobber
